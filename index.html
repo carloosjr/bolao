@@ -187,6 +187,22 @@
     .btn-modal-close { width: 100%; padding: .7rem; background: #f3f4f6; border: 1px solid var(--borda); border-radius: .6rem; font-weight: 700; font-size: .9rem; cursor: pointer; }
     .btn-modal-close:hover { background: #e5e7eb; }
 
+    /* ── REGRAS ── */
+    .regras-card { background: var(--card); border-radius: .9rem; box-shadow: 0 1px 6px rgba(0,0,0,.07); overflow: hidden; margin-bottom: .9rem; }
+    .regras-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; padding: .85rem; }
+    .regra-item { display: flex; flex-direction: column; align-items: center; gap: .3rem; background: #f9fafb; border-radius: .6rem; padding: .65rem .5rem; border: 1.5px solid var(--borda); text-align: center; }
+    .regra-pts { font-size: 1.45rem; font-weight: 900; line-height: 1; }
+    .regra-pts.gold   { color: #c9a227; }
+    .regra-pts.silver { color: #009C3B; }
+    .regra-pts.zero   { color: #e53935; }
+    .regra-desc { font-size: .72rem; color: var(--texto-sec); line-height: 1.3; }
+
+    /* ── NOMES SALVOS ── */
+    .nomes-salvos { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
+    .chip-nome { padding: .32rem .75rem; background: #e8f5e9; border: 1.5px solid #a5d6a7; border-radius: 2rem; font-size: .8rem; font-weight: 600; color: #1b5e20; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .chip-nome:hover { background: #c8e6c9; border-color: var(--verde); }
+    .chip-nome.pendente { background: #fff3e0; border-color: #ffcc80; color: #7c4200; }
+
     /* ── EMPTY / TOAST ── */
     .empty { text-align: center; padding: 2rem 1rem; color: #aaa; }
     .empty-icon { font-size: 2.5rem; display: block; margin-bottom: .5rem; }
@@ -254,6 +270,26 @@
     <div class="deadline-banner">
       ⚠️ <strong>Prazo:</strong> envie seus palpites antes de <strong>11/06 às 16h (Brasília)</strong>. O palpite só entra no bolão após a confirmação do pagamento.
     </div>
+
+    <!-- REGRAS DE PONTUAÇÃO -->
+    <div class="regras-card">
+      <div class="ch blue">📋 Regras de Pontuação</div>
+      <div class="regras-grid">
+        <div class="regra-item">
+          <span class="regra-pts gold">3 pts</span>
+          <span class="regra-desc">Placar exato<br><em>ex: 2×1 = 2×1</em></span>
+        </div>
+        <div class="regra-item">
+          <span class="regra-pts silver">1 pt</span>
+          <span class="regra-desc">Acertou o vencedor ou empate<br><em>ex: 2×1 = 3×0</em></span>
+        </div>
+        <div class="regra-item">
+          <span class="regra-pts zero">0 pts</span>
+          <span class="regra-desc">Errou o resultado<br><em>ex: 1×0 = 0×2</em></span>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="ch green">👤 Identificação</div>
       <div class="cb">
@@ -262,7 +298,8 @@
           <input type="text" class="text-input" id="nome-input" placeholder="Ex: João Silva" autocomplete="off" />
           <button class="btn-load" onclick="carregarPalpites()">↓ Carregar</button>
         </div>
-        <div class="progress-bar"><div class="progress-fill" id="pfill" style="width:0%"></div></div>
+        <div id="nomes-salvos-wrap"></div>
+        <div class="progress-bar" style="margin-top:.75rem"><div class="progress-fill" id="pfill" style="width:0%"></div></div>
         <div class="progress-text" id="ptext">0 / 24 jogos preenchidos</div>
       </div>
     </div>
@@ -553,6 +590,7 @@ function submeter() {
   document.getElementById('nome-input').value = '';
   document.querySelectorAll('.si').forEach(i => { i.value=''; i.classList.remove('ok'); });
   updateProg();
+  renderNomesSalvos();
 
   abrirModal(nome);
 }
@@ -766,19 +804,19 @@ function verificarSenha() {
 function confirmarPag(id) {
   const p = palpites.find(p => p.id === id); if (!p) return;
   p.status = 'confirmado';
-  salvarPalpites(); toast(`✅ Pagamento de ${p.nome} confirmado!`); renderAdmin();
+  salvarPalpites(); toast(`✅ Pagamento de ${p.nome} confirmado!`); renderAdmin(); renderNomesSalvos();
 }
 
 function cancelarPag(id) {
   const p = palpites.find(p => p.id === id); if (!p) return;
   p.status = 'pendente';
-  salvarPalpites(); toast(`↩ ${p.nome} voltou para pendente.`,'#e67e22'); renderAdmin();
+  salvarPalpites(); toast(`↩ ${p.nome} voltou para pendente.`,'#e67e22'); renderAdmin(); renderNomesSalvos();
 }
 
 function removerAdmin(id) {
   if (!confirm('Excluir este palpite definitivamente?')) return;
   palpites = palpites.filter(p => p.id !== id);
-  salvarPalpites(); toast('Palpite excluído.'); renderAdmin();
+  salvarPalpites(); toast('Palpite excluído.'); renderAdmin(); renderNomesSalvos();
 }
 
 /* ── UTILS ── */
@@ -792,8 +830,27 @@ function toast(msg, bg='#009C3B') {
   clearTimeout(_tt); _tt = setTimeout(()=>el.classList.remove('show'), 3200);
 }
 
+/* ── NOMES SALVOS ── */
+function renderNomesSalvos() {
+  const wrap = document.getElementById('nomes-salvos-wrap');
+  if (!wrap) return;
+  if (!palpites.length) { wrap.innerHTML = ''; return; }
+  const chips = palpites.map(p => `
+    <button class="chip-nome${p.status==='pendente'?' pendente':''}"
+      onclick="selecionarNome('${p.nome.replace(/'/g,"\\'")}')">
+      ${esc(p.nome)}${p.status==='pendente'?' ⏳':''}
+    </button>`).join('');
+  wrap.innerHTML = `<div class="nomes-salvos">${chips}</div>`;
+}
+
+function selecionarNome(nome) {
+  document.getElementById('nome-input').value = nome;
+  carregarPalpites();
+}
+
 /* ── INIT ── */
 buildForm();
+renderNomesSalvos();
 </script>
 </body>
 </html>
