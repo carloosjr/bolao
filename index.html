@@ -320,6 +320,9 @@
           <button class="btn-load" onclick="carregarPalpites()">↓ Carregar</button>
         </div>
         <div id="nomes-salvos-wrap"></div>
+        <label class="field-label" style="margin-top:.65rem">Senha (4 dígitos)</label>
+        <input type="password" class="text-input" id="pin-input" placeholder="Crie ou informe sua senha" maxlength="4" inputmode="numeric" autocomplete="off" />
+        <div style="font-size:.7rem;color:var(--texto-sec);margin-top:.25rem;margin-bottom:.1rem">Use sempre a mesma senha para poder editar seus palpites.</div>
         <div class="progress-bar" style="margin-top:.75rem"><div class="progress-fill" id="pfill" style="width:0%"></div></div>
         <div class="progress-text" id="ptext">0 / 24 jogos preenchidos</div>
       </div>
@@ -596,6 +599,13 @@ async function submeter() {
   const nome = document.getElementById('nome-input').value.trim();
   if (!nome) { toast('Digite seu nome.', '#e53935'); return; }
 
+  const pin = document.getElementById('pin-input').value.trim();
+  if (!pin || !/^\d{4}$/.test(pin)) {
+    toast('Digite uma senha de 4 dígitos para proteger seu palpite.', '#e53935');
+    document.getElementById('pin-input').focus();
+    return;
+  }
+
   const predicoes = {};
   let ok = true;
   IDS.forEach(id => {
@@ -608,17 +618,23 @@ async function submeter() {
 
   const existing = palpites.find(p => p.nome.toLowerCase() === nome.toLowerCase());
   if (existing) {
-    if (!confirm(`Já existe palpite para "${nome}". Substituir?`)) return;
+    if (existing.pin && existing.pin !== pin) {
+      toast('❌ Senha incorreta. Você não pode editar o palpite de outra pessoa.', '#e53935');
+      document.getElementById('pin-input').focus();
+      return;
+    }
+    if (!confirm(`Substituir palpite de "${nome}"?`)) return;
     await _sb.from('palpites').delete().eq('id', existing.id);
     palpites = palpites.filter(p => p.id !== existing.id);
   }
 
-  const entry = { id: Date.now().toString(36), nome, predicoes, status: 'pendente' };
+  const entry = { id: Date.now().toString(36), nome, predicoes, status: 'pendente', pin };
   const { error } = await _sb.from('palpites').insert(entry);
   if (error) { toast('Erro ao salvar. Tente novamente.', '#e53935'); return; }
   palpites.push(entry);
 
   document.getElementById('nome-input').value = '';
+  document.getElementById('pin-input').value = '';
   document.querySelectorAll('.si').forEach(i => { i.value=''; i.classList.remove('ok'); });
   updateProg();
   renderNomesSalvos();
