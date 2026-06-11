@@ -506,7 +506,7 @@ function gerarPixPayload(chave, valor, nome) {
 /* ── COUNTDOWN ── */
 (function tick() {
   const d = DEADLINE - Date.now();
-  if (d <= 0) { document.getElementById('countdown').innerHTML = '<span style="color:var(--amarelo);font-weight:700">⛔ Prazo encerrado!</span>'; return; }
+  if (d <= 0) { document.getElementById('countdown').innerHTML = '<span style="color:var(--amarelo);font-weight:700">⛔ Prazo encerrado!</span>'; bloquearFormulario(); return; }
   document.getElementById('cd-d').textContent = String(Math.floor(d/86400000)).padStart(2,'0');
   document.getElementById('cd-h').textContent = String(Math.floor(d%86400000/3600000)).padStart(2,'0');
   document.getElementById('cd-m').textContent = String(Math.floor(d%3600000/60000)).padStart(2,'0');
@@ -594,8 +594,24 @@ function carregarPalpites() {
   toast(`Palpites de ${nome} carregados — edite e reenvie.`);
 }
 
+/* ── BLOQUEAR FORMULÁRIO APÓS PRAZO ── */
+function bloquearFormulario() {
+  document.querySelectorAll('.si').forEach(i => { i.disabled = true; i.style.opacity = '.45'; });
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = '⛔ Prazo encerrado';
+  btn.style.opacity = '.45';
+  btn.style.cursor = 'not-allowed';
+  const loadBtn = document.querySelector('.btn-load');
+  if (loadBtn) { loadBtn.disabled = true; loadBtn.style.opacity = '.45'; loadBtn.style.cursor = 'not-allowed'; }
+}
+
 /* ── SUBMIT → abre modal Pix ── */
 async function submeter() {
+  if (Date.now() >= DEADLINE) {
+    toast('⛔ Prazo encerrado! Não é mais possível enviar ou alterar palpites.', '#e53935');
+    return;
+  }
   const nome = document.getElementById('nome-input').value.trim();
   if (!nome) { toast('Digite seu nome.', '#e53935'); return; }
 
@@ -927,6 +943,7 @@ function selecionarNome(nome) {
 /* ── INIT ── */
 async function init() {
   buildForm();
+  if (Date.now() >= DEADLINE) bloquearFormulario();
   toast('Carregando dados...', '#3b82f6');
   await loadData();
   renderNomesSalvos();
