@@ -381,16 +381,32 @@
   Copa 2026 · Feito com ❤️ e muito verde-amarelo 🇧🇷
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ════════════════════════════════════════
    ⚙️  CONFIGURAÇÕES — edite aqui
    ════════════════════════════════════════ */
 const CONFIG = {
-  PIX_CHAVE:   '83 9 9654-0349',       // celular, e-mail, CPF ou chave aleatória
+  PIX_CHAVE:   '83 9 9654-0349',
   PIX_NOME:    'José Carlos | Santander',
   VALOR:       20.00,
   ADMIN_SENHA: '$Superuser1402',
 };
+
+/* ── SUPABASE ── */
+const _sb = supabase.createClient(
+  'https://bzebborrqzvpdmvtieib.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6ZWJib3JycXp2cGRtdnRpZWliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTEzMzgsImV4cCI6MjA5Mjk2NzMzOH0.FD1yOt7LLIMUmUBT8rEM27NbdZN-svNv9VhzFofFBsA'
+);
+
+async function loadData() {
+  const [{ data: p }, { data: r }] = await Promise.all([
+    _sb.from('palpites').select('*').order('created_at'),
+    _sb.from('resultados').select('*')
+  ]);
+  palpites   = p || [];
+  resultados = Object.fromEntries((r || []).map(x => [x.id, { c: x.c, f: x.f }]));
+}
 
 /* ── DATA ── */
 const JOGOS = {
@@ -434,12 +450,9 @@ const IDS = Object.keys(JOGOS);
 const DEADLINE = new Date('2026-06-11T18:30:00Z'); // 15h30 Brasília
 
 /* ── STATE ── */
-let palpites   = JSON.parse(localStorage.getItem('bolao26_p') || '[]');
-let resultados = JSON.parse(localStorage.getItem('bolao26_r') || '{}');
+let palpites   = [];
+let resultados = {};
 let adminAuth  = false;
-
-// Migração: palpites antigos (sem campo status) viram 'confirmado'
-palpites = palpites.map(p => p.status ? p : { ...p, status: 'confirmado' });
 
 /* ── FLAG HELPER ── */
 function fl(code, cls='fl-sm') {
@@ -579,7 +592,7 @@ function carregarPalpites() {
 }
 
 /* ── SUBMIT → abre modal Pix ── */
-function submeter() {
+async function submeter() {
   const nome = document.getElementById('nome-input').value.trim();
   if (!nome) { toast('Digite seu nome.', '#e53935'); return; }
 
@@ -593,20 +606,22 @@ function submeter() {
   });
   if (!ok) { toast('⚠️ Preencha todos os 24 jogos!', '#e53935'); return; }
 
-  const idx = palpites.findIndex(p => p.nome.toLowerCase() === nome.toLowerCase());
-  if (idx >= 0) {
+  const existing = palpites.find(p => p.nome.toLowerCase() === nome.toLowerCase());
+  if (existing) {
     if (!confirm(`Já existe palpite para "${nome}". Substituir?`)) return;
-    palpites.splice(idx, 1);
+    await _sb.from('palpites').delete().eq('id', existing.id);
+    palpites = palpites.filter(p => p.id !== existing.id);
   }
 
-  palpites.push({ id: Date.now().toString(36), nome, predicoes, status: 'pendente' });
-  salvarPalpites();
+  const entry = { id: Date.now().toString(36), nome, predicoes, status: 'pendente' };
+  const { error } = await _sb.from('palpites').insert(entry);
+  if (error) { toast('Erro ao salvar. Tente novamente.', '#e53935'); return; }
+  palpites.push(entry);
 
   document.getElementById('nome-input').value = '';
   document.querySelectorAll('.si').forEach(i => { i.value=''; i.classList.remove('ok'); });
   updateProg();
   renderNomesSalvos();
-
   abrirModal(nome);
 }
 
@@ -764,12 +779,13 @@ function resRow(id) {
     </div>`;
 }
 
-function salvarRes(id) {
+async function salvarRes(id) {
   const c = document.getElementById('rc-'+id).value;
   const f = document.getElementById('rf-'+id).value;
   if (c===''||f==='') { toast('Preencha os dois placares.','#e53935'); return; }
+  const { error } = await _sb.from('resultados').upsert({ id, c:+c, f:+f, updated_at: new Date().toISOString() });
+  if (error) { toast('Erro ao salvar.', '#e53935'); return; }
   resultados[id] = { c:+c, f:+f };
-  localStorage.setItem('bolao26_r', JSON.stringify(resultados));
   toast(`✅ ${JOGOS[id].casa.n} ${c}×${f} ${JOGOS[id].fora.n}`);
   renderResultados();
 }
@@ -840,26 +856,31 @@ function verificarSenha() {
   }
 }
 
-function confirmarPag(id) {
+async function confirmarPag(id) {
   const p = palpites.find(p => p.id === id); if (!p) return;
+  const { error } = await _sb.from('palpites').update({ status: 'confirmado' }).eq('id', id);
+  if (error) { toast('Erro.', '#e53935'); return; }
   p.status = 'confirmado';
-  salvarPalpites(); toast(`✅ Pagamento de ${p.nome} confirmado!`); renderAdmin(); renderNomesSalvos();
+  toast(`✅ Pagamento de ${p.nome} confirmado!`); renderAdmin(); renderNomesSalvos();
 }
 
-function cancelarPag(id) {
+async function cancelarPag(id) {
   const p = palpites.find(p => p.id === id); if (!p) return;
+  const { error } = await _sb.from('palpites').update({ status: 'pendente' }).eq('id', id);
+  if (error) { toast('Erro.', '#e53935'); return; }
   p.status = 'pendente';
-  salvarPalpites(); toast(`↩ ${p.nome} voltou para pendente.`,'#e67e22'); renderAdmin(); renderNomesSalvos();
+  toast(`↩ ${p.nome} voltou para pendente.`,'#e67e22'); renderAdmin(); renderNomesSalvos();
 }
 
-function removerAdmin(id) {
+async function removerAdmin(id) {
   if (!confirm('Excluir este palpite definitivamente?')) return;
+  const { error } = await _sb.from('palpites').delete().eq('id', id);
+  if (error) { toast('Erro.', '#e53935'); return; }
   palpites = palpites.filter(p => p.id !== id);
-  salvarPalpites(); toast('Palpite excluído.'); renderAdmin(); renderNomesSalvos();
+  toast('Palpite excluído.'); renderAdmin(); renderNomesSalvos();
 }
 
 /* ── UTILS ── */
-function salvarPalpites() { localStorage.setItem('bolao26_p', JSON.stringify(palpites)); }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 let _tt;
@@ -888,8 +909,13 @@ function selecionarNome(nome) {
 }
 
 /* ── INIT ── */
-buildForm();
-renderNomesSalvos();
+async function init() {
+  buildForm();
+  toast('Carregando dados...', '#3b82f6');
+  await loadData();
+  renderNomesSalvos();
+}
+init();
 </script>
 </body>
 </html>
